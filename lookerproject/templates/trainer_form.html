@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<div class="container-fluid webcam-container">
+    <div class="row">
+        <div class="col-md-6">
+            <h1>Webcam Capture</h1>
+            <video id="videoElement" autoplay></video><br><br>
+            <button id="startButton">Start Webcam</button>
+            <button id="captureButton">Capture Photo</button>
+        </div>
+        <div class="col-md-6">
+            <h1>Captured Photo</h1>
+            <canvas id="canvasElement" style="display: none;"></canvas>
+            <img id="photoElement" style="display: none;">
+            <br>
+            <!-- Add a text input for description -->
+            <input type="text" id="description" placeholder="Enter college name" value="College">
+            <button id="uploadButton" disabled>Upload Photo</button>
+        </div>
+    </div>
+
+    <style>
+        .webcam-container {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        .webcam-container h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .webcam-container .row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .webcam-container .col-md-6 {
+            margin: 10px;
+            text-align: center;
+        }
+
+        .webcam-container video, .webcam-container canvas, .webcam-container img {
+            max-width: 100%;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .webcam-container button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+
+        .webcam-container button:hover {
+            background-color: #45a049;
+        }
+
+        .webcam-container #uploadButton:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .webcam-container input[type="text"] {
+            padding: 10px;
+            margin: 5px 0;
+            box-sizing: border-box;
+            border: 2px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .webcam-container input[type="text"]:focus {
+            border-color: #4CAF50;
+        }
+    </style>
+    
+    <script>
+        const videoElement = document.getElementById('videoElement');
+        const canvasElement = document.getElementById('canvasElement');
+        const photoElement = document.getElementById('photoElement');
+        const startButton = document.getElementById('startButton');
+        const captureButton = document.getElementById('captureButton');
+        const uploadButton = document.getElementById('uploadButton');
+        const descriptionInput = document.getElementById('description');
+        
+        let stream;
+        let capturedImageDataUrl = null;
+    
+        async function startWebcam() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                videoElement.srcObject = stream;
+                startButton.disabled = true;
+                captureButton.disabled = false;
+            } catch (error) {
+                console.error('Error accessing webcam:', error);
+            }
+        }
+    
+        function stopWebcam() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+        }
+    
+        startButton.addEventListener('click', startWebcam);
+    
+        function capturePhoto() {
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
+            canvasElement.getContext('2d').drawImage(videoElement, 0, 0);
+            capturedImageDataUrl = canvasElement.toDataURL('image/jpeg');
+            
+            photoElement.src = capturedImageDataUrl;
+            photoElement.style.display = 'block';
+    
+            uploadButton.disabled = false;
+        }
+    
+        async function getLocation() {
+            return new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(position => {
+                        resolve({
+                            latitude: position.coords.latitude,
+                            longitude: position.coords.longitude
+                        });
+                    }, error => {
+                        reject(error);
+                    });
+                } else {
+                    reject(new Error('Geolocation is not supported by this browser.'));
+                }
+            });
+        }
+    
+        async function uploadPhoto() {
+            if (!capturedImageDataUrl) {
+                console.error('No photo captured.');
+                return;
+            }
+    
+            try {
+                const location = await getLocation();
+                const timestamp = new Date().toISOString();
+                const description = descriptionInput.value; // Get the description value
+    
+                const response = await fetch("{% url 'trainer' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}' // Ensure CSRF token is included
+                    },
+                    body: JSON.stringify({ 
+                        image: capturedImageDataUrl,
+                        timestamp: timestamp,
+                        latitude: location.latitude,
+                        longitude: location.longitude,
+                        description: description // Send description with the request
+                    })
+                });
+    
+                if (response.ok) {
+                    const html = await response.text();
+                    document.open();
+                    document.write(html);
+                    document.close();
+                    
+                    stopWebcam();
+                } else {
+                    console.error('Failed to upload photo.');
+                }
+            } catch (error) {
+                console.error('Error uploading photo:', error);
+            }
+        }
+    
+        captureButton.addEventListener('click', capturePhoto);
+        uploadButton.addEventListener('click', uploadPhoto);
+    </script>
+</div>
+{% endblock %}
